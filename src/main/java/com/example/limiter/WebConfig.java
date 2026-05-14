@@ -1,5 +1,6 @@
 package com.example.limiter;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
@@ -7,10 +8,15 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 @Configuration
 public class WebConfig implements WebMvcConfigurer {
 
+    @Value("${rate-limiter.capacity}")
+    private int capacity;
+
+    @Value("${rate-limiter.rate}")
+    private double rate;
+
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
-        // 只对 /api/limited 接口生效，/api/hello 不受影响
-        registry.addInterceptor(new RateLimitInterceptor())
+        registry.addInterceptor(new RateLimitInterceptor(capacity, rate))
                 .addPathPatterns("/api/limited");
     }
 }

@@ -64,4 +64,10 @@ public class TokenBucket {
         refill();
         return tokens;
     }
+
+    public synchronized long getWaitSeconds() {
+        refill();
+        if (tokens >= 1.0) return 0;
+        return (long) Math.ceil((1.0 - tokens) / rate);
+    }
 }
