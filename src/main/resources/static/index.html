@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>API Rate Limiter — Dashboard</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: #0f1117;
+    color: #e1e4e8;
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    padding: 40px 20px;
+  }
+  .container { max-width: 780px; width: 100%; }
+
+  /* 头部 */
+  .header {
+    text-align: center;
+    margin-bottom: 36px;
+  }
+  .header h1 {
+    font-size: 2rem;
+    font-weight: 700;
+    background: linear-gradient(135deg, #7c5cfc, #4ecdc4);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-bottom: 6px;
+  }
+  .header p { color: #8b949e; font-size: 0.95rem; }
+
+  /* 配置卡片 */
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 14px;
+    margin-bottom: 28px;
+  }
+  .card {
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 12px;
+    padding: 20px;
+    text-align: center;
+  }
+  .card .label { color: #8b949e; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.5px; }
+  .card .value { font-size: 1.8rem; font-weight: 700; margin-top: 4px; }
+  .card .value.rate { color: #7c5cfc; }
+  .card .value.capacity { color: #4ecdc4; }
+  .card .value.remaining { color: #e3b341; transition: color 0.3s; }
+  .card .value.remaining.low { color: #f85149; }
+
+  /* 按钮区 */
+  .actions {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 28px;
+    flex-wrap: wrap;
+  }
+  button {
+    flex: 1;
+    min-width: 130px;
+    padding: 14px 22px;
+    border: 1px solid #30363d;
+    border-radius: 10px;
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+    background: #161b22;
+    color: #e1e4e8;
+    transition: all 0.2s;
+  }
+  button:hover { border-color: #7c5cfc; background: #1c2130; }
+  button:active { transform: scale(0.97); }
+  button.primary { background: #7c5cfc; border-color: #7c5cfc; color: #fff; }
+  button.primary:hover { background: #6a4be0; }
+  button.danger { background: #da3633; border-color: #da3633; color: #fff; }
+  button.danger:hover { background: #c62828; }
+  button.flood {
+    background: linear-gradient(135deg, #da3633, #f0883e);
+    border: none;
+    color: #fff;
+    animation: pulse 1.5s infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(218, 54, 51, 0.4); }
+    50% { box-shadow: 0 0 0 12px rgba(218, 54, 51, 0); }
+  }
+
+  /* 令牌桶可视化 */
+  .bucket-visual {
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 12px;
+    padding: 20px 24px;
+    margin-bottom: 28px;
+  }
+  .bucket-visual h3 { font-size: 0.85rem; color: #8b949e; margin-bottom: 14px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .bucket-bar {
+    height: 28px;
+    background: #21262d;
+    border-radius: 14px;
+    overflow: hidden;
+    position: relative;
+  }
+  .bucket-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #4ecdc4, #7c5cfc);
+    border-radius: 14px;
+    transition: width 0.4s ease;
+  }
+  .bucket-labels { display: flex; justify-content: space-between; margin-top: 8px; font-size: 0.75rem; color: #8b949e; }
+
+  /* 请求日志 */
+  .log-panel {
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .log-panel h3 {
+    font-size: 0.85rem;
+    color: #8b949e;
+    padding: 16px 20px 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-bottom: 1px solid #30363d;
+  }
+  .log-list { max-height: 320px; overflow-y: auto; }
+  .log-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 20px;
+    font-size: 0.85rem;
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+    border-bottom: 1px solid #21262d;
+    animation: slideIn 0.2s ease;
+  }
+  @keyframes slideIn { from { opacity: 0; transform: translateX(-10px); } to { opacity: 1; transform: translateX(0); } }
+  .log-item.success { border-left: 3px solid #3fb950; }
+  .log-item.error { border-left: 3px solid #f85149; background: rgba(248, 81, 73, 0.06); }
+  .log-badge {
+    padding: 3px 8px;
+    border-radius: 6px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    min-width: 40px;
+    text-align: center;
+  }
+  .log-badge.ok { background: rgba(63, 185, 80, 0.15); color: #3fb950; }
+  .log-badge.err { background: rgba(248, 81, 73, 0.15); color: #f85149; }
+  .log-time { color: #484f58; min-width: 70px; }
+  .log-msg { color: #8b949e; flex: 1; }
+  .log-remaining { color: #e3b341; font-weight: 600; }
+
+  /* 空的提示 */
+  .empty { padding: 40px; text-align: center; color: #484f58; }
+
+  /* 响应式 */
+  @media (max-width: 600px) {
+    .cards { grid-template-columns: 1fr; }
+    .actions { flex-direction: column; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <div class="header">
+    <h1>API Rate Limiter</h1>
+    <p>令牌桶限流演示 — Token Bucket Algorithm Demo</p>
+  </div>
+
+  <!-- 配置展示 -->
+  <div class="cards">
+    <div class="card">
+      <div class="label">每秒速率</div>
+      <div class="value rate" id="rateDisplay">2</div>
+    </div>
+    <div class="card">
+      <div class="label">桶容量</div>
+      <div class="value capacity" id="capacityDisplay">10</div>
+    </div>
+    <div class="card">
+      <div class="label">剩余令牌</div>
+      <div class="value remaining" id="remainingDisplay">10</div>
+    </div>
+  </div>
+
+  <!-- 令牌桶可视化 -->
+  <div class="bucket-visual">
+    <h3>令牌桶状态</h3>
+    <div class="bucket-bar">
+      <div class="bucket-fill" id="bucketFill" style="width: 100%;"></div>
+    </div>
+    <div class="bucket-labels">
+      <span>0</span>
+      <span id="bucketLabel">10 / 10</span>
+      <span id="bucketMax">10</span>
+    </div>
+  </div>
+
+  <!-- 操作按钮 -->
+  <div class="actions">
+    <button class="primary" onclick="sendRequest('/api/limited')">🎯 发送限流请求</button>
+    <button onclick="sendRequest('/api/hello')">✅ 发送普通请求</button>
+    <button class="flood" id="floodBtn" onclick="toggleFlood()">🌊 连续轰炸（测试限流）</button>
+  </div>
+
+  <!-- 请求日志 -->
+  <div class="log-panel">
+    <h3>请求日志</h3>
+    <div class="log-list" id="logList">
+      <div class="empty">点击上方按钮开始测试</div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  const BASE = window.location.origin;
+  const logList = document.getElementById('logList');
+  const remainingDisplay = document.getElementById('remainingDisplay');
+  const bucketFill = document.getElementById('bucketFill');
+  const bucketLabel = document.getElementById('bucketLabel');
+  const bucketMax = document.getElementById('bucketMax');
+  let floodInterval = null;
+
+  // 发送请求
+  async function sendRequest(path) {
+    const start = performance.now();
+    try {
+      const res = await fetch(BASE + path);
+      const latency = Math.round(performance.now() - start);
+      const remaining = res.headers.get('X-RateLimit-Remaining');
+      const limit = res.headers.get('X-RateLimit-Limit');
+
+      if (res.ok) {
+        const text = await res.text();
+        addLog('success', res.status, text, remaining, latency);
+      } else if (res.status === 429) {
+        const reset = res.headers.get('X-RateLimit-Reset') || '?';
+        addLog('error', res.status, 'Too Many Requests — 等 ' + reset + ' 秒后重试', '0', latency);
+      } else {
+        addLog('error', res.status, 'Unexpected response', remaining, latency);
+      }
+
+      // 更新令牌状态
+      if (limit) {
+        document.getElementById('capacityDisplay').textContent = limit;
+        bucketMax.textContent = limit;
+        updateBucket(parseInt(remaining) || 0, parseInt(limit) || 10);
+      }
+
+    } catch (err) {
+      addLog('error', 'ERR', '请求失败: ' + err.message, '?', 0);
+    }
+  }
+
+  // 连续轰炸
+  function toggleFlood() {
+    const btn = document.getElementById('floodBtn');
+    if (floodInterval) {
+      clearInterval(floodInterval);
+      floodInterval = null;
+      btn.textContent = '🌊 连续轰炸（测试限流）';
+      btn.classList.remove('danger');
+      btn.classList.add('flood');
+    } else {
+      btn.textContent = '⏹ 停止轰炸';
+      btn.classList.remove('flood');
+      btn.classList.add('danger');
+      // 保持间隔略小于补充速率，确保会触发429
+      floodInterval = setInterval(() => sendRequest('/api/limited'), 80);
+    }
+  }
+
+  // 更新令牌桶可视化
+  function updateBucket(remaining, capacity) {
+    const pct = (remaining / capacity) * 100;
+    bucketFill.style.width = pct + '%';
+    bucketLabel.textContent = remaining + ' / ' + capacity;
+    remainingDisplay.textContent = remaining;
+
+    if (remaining === 0) {
+      remainingDisplay.classList.add('low');
+    } else {
+      remainingDisplay.classList.remove('low');
+    }
+  }
+
+  // 添加日志条目
+  function addLog(type, status, msg, remaining, latency) {
+    // 清除空状态提示
+    const empty = logList.querySelector('.empty');
+    if (empty) empty.remove();
+
+    const item = document.createElement('div');
+    item.className = 'log-item ' + (type === 'success' ? 'success' : 'error');
+
+    const badge = document.createElement('span');
+    badge.className = 'log-badge ' + (type === 'success' ? 'ok' : 'err');
+    badge.textContent = status;
+
+    const time = document.createElement('span');
+    time.className = 'log-time';
+    time.textContent = new Date().toLocaleTimeString();
+
+    const msgSpan = document.createElement('span');
+    msgSpan.className = 'log-msg';
+    msgSpan.textContent = msg;
+
+    const remainingSpan = document.createElement('span');
+    remainingSpan.className = 'log-remaining';
+    remainingSpan.textContent = latency + 'ms' + (remaining != null ? ' | 剩余:' + remaining : '');
+
+    item.appendChild(badge);
+    item.appendChild(time);
+    item.appendChild(msgSpan);
+    item.appendChild(remainingSpan);
+    logList.prepend(item);
+
+    // 最多保留100条
+    while (logList.children.length > 100) {
+      logList.lastChild.remove();
+    }
+  }
+
+  // 页面加载时获取初始状态
+  (async function init() {
+    try {
+      const res = await fetch(BASE + '/api/limited');
+      const limit = res.headers.get('X-RateLimit-Limit');
+      const remaining = res.headers.get('X-RateLimit-Remaining');
+      if (limit) {
+        document.getElementById('capacityDisplay').textContent = limit;
+        bucketMax.textContent = limit;
+      }
+      if (remaining != null) {
+        updateBucket(parseInt(remaining) || 0, parseInt(limit) || 10);
+      }
+    } catch(e) { /* 服务还没启动时静默失败 */ }
+  })();
+</script>
+</body>
+</html>
